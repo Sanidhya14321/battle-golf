@@ -1,0 +1,42 @@
+{
+  "name": "battle-golf",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:web": "vite --host 0.0.0.0",
+    "dev:server": "tsx watch apps/server/index.ts",
+    "build": "tsc --noEmit && vite build && esbuild apps/server/index.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-server/index.js",
+    "start": "node dist-server/index.js",
+    "test": "tsx --test tests/*.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@colyseus/core": "0.18.18",
+    "@colyseus/sdk": "0.18.4",
+    "@colyseus/schema": "5.0.35",
+    "@colyseus/ws-transport": "0.18.4",
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "@supabase/supabase-js": "2.117.2",
+    "express": "5.2.1",
+    "cors": "2.8.6",
+    "three": "0.186.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/cors": "2.8.19",
+    "@types/three": "0.186.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/node": "26.6.4",
+    "typescript": "7.0.2",
+    "tsx": "4.23.15",
+    "vite": "8.3.2",
+    "@vitejs/plugin-react": "6.1.1",
+    "esbuild": "0.28.2",
+    "concurrently": "10.0.5"
+  }
+}
