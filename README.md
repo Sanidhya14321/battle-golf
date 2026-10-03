@@ -2,6 +2,10 @@
 
 A browser golf brawler with a procedural Three.js world, Rapier physics, and an authoritative Colyseus multiplayer server.
 
+Play: https://battle-golf-6bve.onrender.com
+
+Source: https://github.com/Sanidhya14321/battle-golf
+
 ## Play locally
 
 Requires Node.js 24.
@@ -43,6 +47,8 @@ Copy `.env.example` to `.env.local` for local account integration. Never commit 
 The existing Supabase project is configured with the schema in `supabase/schema.sql` and the Edge Function in `supabase/functions/game-admin/index.ts`. To reproduce it, apply the schema, provision the private server token, and deploy the function with JWT verification disabled; the function verifies its own server token and user credentials. It uses Supabase's built-in service-role environment variable internally.
 
 Enable Google in Supabase Authentication with your Google OAuth client ID and secret. Add the Supabase callback URI to Google and the live website URL to Supabase's allowed redirect URLs. Google OAuth credentials must be configured by the account owner.
+
+After configuring the provider, set `VITE_GOOGLE_AUTH_ENABLED=true` on the frontend and redeploy to enable its sign-in button.
 
 `render.yaml` describes a free Node service and a static frontend. Set the frontend `VITE_GAME_SERVER` to the backend's HTTPS URL, and backend `WEB_ORIGIN` to the frontend origin. Both services use the same public Supabase URL/key; only the backend receives `GAME_SERVER_TOKEN`. Free web services can sleep and require a cold start.
 
