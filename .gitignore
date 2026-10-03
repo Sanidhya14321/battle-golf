@@ -5,3 +5,4 @@ dist-server/
 .env.local
 *.log
 artifacts/
+*.blend1

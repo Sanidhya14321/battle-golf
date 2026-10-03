@@ -45,8 +45,8 @@ export const ITEMS = [
     icon: "✹",
     category: "Attack",
     weight: 12,
-    ammo: 3,
-    description: "Three little surprises for your least favorite shortcut.",
+    ammo: 2,
+    description: "Two little surprises for your least favorite shortcut.",
   },
   {
     id: "horn",
@@ -175,135 +175,36 @@ export type Theme = keyof typeof THEMES;
 export const COURSES = [
   {
     id: "clover",
-    name: "Clover Club",
+    name: "Clover Circuit",
     theme: "park",
+    length: 80,
+    par: 3,
+    curve: 0,
+    gap: 0,
+    obstacle: "none",
+    tag: "Wide fairways. One tempting bank shot.",
+  },
+  {
+    id: "bridge",
+    name: "Splitwater Crossing",
+    theme: "tropical",
+    length: 120,
+    par: 4,
+    curve: 0,
+    gap: 1,
+    obstacle: "none",
+    tag: "Follow the bridge or clear the water.",
+  },
+  {
+    id: "factory",
+    name: "Windmill Works",
+    theme: "industrial",
     length: 100,
     par: 4,
     curve: 0,
     gap: 0,
     obstacle: "windmill",
-    tag: "A friendly start. Allegedly.",
-  },
-  {
-    id: "bridge",
-    name: "Bramble Bridges",
-    theme: "park",
-    length: 135,
-    par: 5,
-    curve: 5,
-    gap: 1,
-    obstacle: "spinner",
-    tag: "Take the scenic route. Or don’t.",
-  },
-  {
-    id: "dunes",
-    name: "Dune Dash",
-    theme: "desert",
-    length: 120,
-    par: 4,
-    curve: 4,
-    gap: 0,
-    obstacle: "windmill",
-    tag: "Hot sand. Heated competition.",
-  },
-  {
-    id: "mesa",
-    name: "Mesa Madness",
-    theme: "desert",
-    length: 145,
-    par: 5,
-    curve: -5,
-    gap: 1,
-    obstacle: "elevator",
-    tag: "Watch your step. And your friends.",
-  },
-  {
-    id: "glacier",
-    name: "Glacier Glide",
-    theme: "ice",
-    length: 115,
-    par: 4,
-    curve: -3,
-    gap: 0,
-    obstacle: "spinner",
-    tag: "A slippery slope to victory.",
-  },
-  {
-    id: "frost",
-    name: "Frostbite Falls",
-    theme: "ice",
-    length: 150,
-    par: 5,
-    curve: 5,
-    gap: 1,
-    obstacle: "elevator",
-    tag: "Cool heads make warmer scoreboards.",
-  },
-  {
-    id: "cove",
-    name: "Coconut Cove",
-    theme: "tropical",
-    length: 110,
-    par: 4,
-    curve: 4,
-    gap: 0,
-    obstacle: "windmill",
-    tag: "Paradise with projectiles.",
-  },
-  {
-    id: "reef",
-    name: "Riptide Reef",
-    theme: "tropical",
-    length: 140,
-    par: 5,
-    curve: -5,
-    gap: 1,
-    obstacle: "spinner",
-    tag: "The water hazard is very literal.",
-  },
-  {
-    id: "factory",
-    name: "Fairway Factory",
-    theme: "industrial",
-    length: 125,
-    par: 4,
-    curve: 3,
-    gap: 0,
-    obstacle: "spinner",
-    tag: "Clock in. Tee off. Cause trouble.",
-  },
-  {
-    id: "foundry",
-    name: "Foundry Run",
-    theme: "industrial",
-    length: 155,
-    par: 5,
-    curve: -4,
-    gap: 1,
-    obstacle: "elevator",
-    tag: "Your shortcut has moving parts.",
-  },
-  {
-    id: "mushroom",
-    name: "Mushroom Meadows",
-    theme: "fantasy",
-    length: 120,
-    par: 4,
-    curve: -4,
-    gap: 0,
-    obstacle: "windmill",
-    tag: "Somewhere over the leaderboard.",
-  },
-  {
-    id: "sky",
-    name: "Skybound Isles",
-    theme: "fantasy",
-    length: 150,
-    par: 5,
-    curve: 5,
-    gap: 1,
-    obstacle: "elevator",
-    tag: "Aim high. Try to land somewhere.",
+    tag: "Time the gate. Race to the raised green.",
   },
 ] as const;
 export type Course = (typeof COURSES)[number];
@@ -335,8 +236,8 @@ export function rulesFor(mode: Mode, custom: Partial<Rules> = {}): Rules {
     bounce: 0.65,
     speed: 1,
     knockback: 1,
-    items: ITEMS.filter(
-      (i) => mode !== "ranked" || !restricted.includes(i.id),
+    items: ITEMS.filter((i) =>
+      ["rocket", "mine", "freeze", "shield", "boots", "coffee"].includes(i.id),
     ).map((i) => i.id),
     bots:
       mode === "ranked" || mode === "practice" ? 0 : mode === "royale" ? 7 : 3,
@@ -346,9 +247,9 @@ export function rulesFor(mode: Mode, custom: Partial<Rules> = {}): Rules {
     courseIds: COURSES.filter((_, i) => mode !== "ranked" || i % 2 === 0).map(
       (c) => c.id,
     ),
-    finishPoints: [30, 24, 19, 15, 12, 9, 6, 3],
-    attackPoints: 2,
-    stylePoints: 2,
+    finishPoints: [20, 16, 13, 10, 8, 6, 4, 2],
+    attackPoints: 1,
+    stylePoints: 0,
   };
   if (mode === "practice") return { ...r, holes: 1, timeLimit: 86400 };
   if (mode !== "custom") return r;
@@ -404,42 +305,97 @@ export function rulesFor(mode: Mode, custom: Partial<Rules> = {}): Rules {
   return r;
 }
 export function layout(course: Course) {
-  const platforms = Array.from({ length: 5 }, (_, i) => ({
-    x: Math.sin(i * 1.7) * course.curve,
-    z: 8 - ((i + 0.5) * course.length) / 5,
-    w: 28 - (i === 2 ? 8 : 0),
-    d: course.length / 5 - (course.gap && i === 2 ? 4 : 0),
-  }));
-  const tee = { x: 0, y: 1, z: 8 };
-  const hole = { x: platforms[4].x, y: 0.12, z: 8 - course.length + 5 };
+  const platforms: {
+    x: number;
+    z: number;
+    w: number;
+    d: number;
+    y?: number;
+  }[] =
+    course.id === "bridge"
+      ? [
+          { x: 0, z: -5, w: 30, d: 30 },
+          { x: 0, z: -92, w: 34, d: 38 },
+          { x: 11, z: -46, w: 8, d: 54 },
+          { x: -4, z: -61, w: 22, d: 12 },
+        ]
+      : course.id === "factory"
+        ? [
+            { x: 0, z: -8, w: 30, d: 36 },
+            { x: 0, z: -44, w: 24, d: 36 },
+            { x: 0, z: -80, w: 32, d: 28, y: 1.2 },
+            { x: 13, z: -47, w: 10, d: 35 },
+          ]
+        : [{ x: 0, z: -30, w: 34, d: 84 }];
+  const hole = {
+    x: course.id === "bridge" ? -5 : course.id === "factory" ? -4 : 5,
+    y: course.id === "factory" ? 1.32 : 0.12,
+    z: 8 - course.length + 5,
+  };
+  const checkpoints =
+    course.id === "bridge"
+      ? [
+          { x: 11, y: 1, z: -35 },
+          { x: -4, y: 1, z: -61 },
+        ]
+      : course.id === "factory"
+        ? [
+            { x: 0, y: 1, z: -28 },
+            { x: 11, y: 2.2, z: -70 },
+          ]
+        : [
+            { x: 0, y: 1, z: -20 },
+            { x: 5, y: 1, z: -47 },
+          ];
   return {
     platforms,
-    tee,
+    tee: { x: 0, y: 1, z: 8 },
     hole,
-    checkpoints: [1, 2, 3, 4].map((i) => ({
-      x: platforms[i].x,
-      y: 1,
-      z: platforms[i].z + platforms[i].d / 2 - 3,
-    })),
-    sand: [
-      { x: -7, z: platforms[1].z, w: 7, d: 9 },
-      { x: 6, z: platforms[3].z, w: 8, d: 8 },
+    checkpoints,
+    sand:
+      course.id === "clover"
+        ? [{ x: -7, z: -29, w: 10, d: 13 }]
+        : [{ x: 5, z: hole.z + 10, w: 8, d: 8 }],
+    water:
+      course.id === "clover"
+        ? [{ x: 10, z: -36, r: 4 }]
+        : course.id === "bridge"
+          ? [
+              { x: -10, z: -39, r: 12 },
+              { x: -11, z: -81, r: 4 },
+            ]
+          : [{ x: -9, z: -51, r: 4 }],
+    crates: [
+      { x: -5, y: 1, z: 1 },
+      { x: course.id === "bridge" ? 11 : -9, y: 1, z: -24 },
+      { x: course.id === "bridge" ? -4 : 8, y: 1, z: -59 },
     ],
-    water: [
-      { x: 7, z: platforms[1].z + 6, r: 3.5 },
-      { x: -7, z: platforms[3].z - 4, r: 3 },
-    ],
-    crates: [0, 1, 2, 3, 4].map((i) => ({
-      x: platforms[i].x + (i % 2 ? 8 : -8),
-      y: 1,
-      z: platforms[i].z,
-    })),
-    boosts: [
-      { x: platforms[1].x, z: platforms[1].z - 5 },
-      { x: platforms[3].x, z: platforms[3].z - 5 },
-    ],
-    ramp: { x: platforms[2].x, z: platforms[2].z + platforms[2].d / 2 - 2 },
-    obstacle: { x: platforms[2].x, z: platforms[2].z },
+    boosts: [] as { x: number; z: number }[],
+    ramp: {
+      x: course.id === "bridge" ? 2 : course.id === "factory" ? 11 : 10,
+      z: course.id === "bridge" ? -17 : course.id === "factory" ? -62 : -40,
+      y: course.id === "factory" ? 0.45 : 0.35,
+      w: course.id === "factory" ? 8 : 4,
+      d: course.id === "factory" ? 10 : 6,
+      angle: course.id === "factory" ? Math.atan(0.12) : 0.24,
+    },
+    obstacle: { x: 0, z: course.id === "factory" ? -48 : -300 },
+    route:
+      course.id === "factory"
+        ? [
+            { x: 9, y: 0, z: -30 },
+            { x: 11, y: 0, z: -54 },
+            { x: 11, y: 1.2, z: -70 },
+            hole,
+          ]
+        : course.id === "bridge"
+          ? [
+              { x: 11, y: 0, z: -15 },
+              { x: 11, y: 0, z: -60 },
+              { x: -4, y: 0, z: -61 },
+              hole,
+            ]
+          : [...checkpoints, hole],
   };
 }
 export type Cosmetic = {

@@ -4,15 +4,17 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { Server, Room, type Client } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
-import { Schema } from "@colyseus/schema";
+import { Schema, defineTypes } from "@colyseus/schema";
 import { createClient } from "@supabase/supabase-js";
 import {
   Game,
+  PROTOCOL,
   initPhysics,
   type Input,
   type Action,
 } from "../../packages/game/simulation";
 import {
+  COLORS,
   COSMETICS,
   ratingChanges,
   type Mode,
@@ -59,7 +61,13 @@ async function identity(token?: string) {
   if (!token) throw new Error("Choose a name before joining");
   const guest = identities.get(token);
   if (guest)
-    return { id: guest.id, name: guest.name, account: false, rating: 800, equipment: {} as Record<string,string> };
+    return {
+      id: guest.id,
+      name: guest.name,
+      account: false,
+      rating: 800,
+      equipment: {} as Record<string, string>,
+    };
   if (!db) throw new Error("Accounts are not configured yet");
   const { data, error } = await db.auth.getUser(token);
   if (error || !data.user) throw new Error("Sign in again to join");
@@ -73,10 +81,27 @@ async function identity(token?: string) {
     name: profile?.name || data.user.user_metadata.full_name || "Golfer",
     account: true,
     rating: profile?.rating || 800,
-    equipment: (profile?.equipment || {}) as Record<string,string>,
+    equipment: (profile?.equipment || {}) as Record<string, string>,
   };
 }
+class MoveInput extends Schema {
+  x = 0;
+  z = 0;
+  yaw = 0;
+  charging = false;
+  seq = 0;
+}
+defineTypes(MoveInput, {
+  x: "float32",
+  z: "float32",
+  yaw: "float32",
+  charging: "boolean",
+  seq: "uint32",
+});
 class BattleRoom extends Room {
+  inputs = this.defineInput(MoveInput);
+  private actions: { id: string; action: Action }[] = [];
+  private broadcastAge = 0;
   maxClients = 8;
   game!: Game;
   owner = "";
@@ -93,11 +118,13 @@ class BattleRoom extends Room {
   }) {
     if (rooms.size >= 1)
       throw new Error("The course is busy. Try again after this match.");
-    const modes: Mode[] = ["party", "royale", "ranked", "custom"];
-    const mode = modes.includes(options.mode!) ? options.mode! : "party";
+    const modes: Mode[] = ["party", "custom"];
+    if (options.mode && !modes.includes(options.mode))
+      throw new Error("Choose Party or a private party room.");
+    const mode = options.mode || "party";
     this.game = new Game(
       mode,
-      options.rules,
+      { bots: mode === "custom" ? 7 : 3 },
       Math.floor(Math.random() * 100000),
     );
     if (options.courseId && mode === "custom") {
@@ -120,36 +147,49 @@ class BattleRoom extends Room {
     });
     this.onMessage("action", (client, a: Action) => {
       if (this.allow(client.sessionId) && a && typeof a.type === "string")
-        this.game.action(client.sessionId, a);
+        this.actions.push({ id: client.sessionId, action: a });
     });
     this.onMessage("start", (client) => {
-      if (client.sessionId === this.owner && this.game.mode === "custom")
-        this.begin();
+      if (client.sessionId === this.owner) this.begin();
     });
-    this.setFixedTimestep(() => {
-      this.game.tick();
-      if (
-        this.game.phase === "lobby" &&
-        this.game.time > 30 &&
-        this.clients.length &&
-        (mode !== "ranked" || this.clients.length >= 2)
-      )
-        this.begin();
-      if (++this.tick % 3 === 0) {
-        this.broadcast("snapshot", {
-          ...this.game.snapshot(),
-          roomCode: this.code,
-        });
-        for (const event of this.game.events.splice(0))
-          this.clients
-            .find((c) => c.sessionId === event.playerId)
-            ?.send("notice", event.text);
-      }
-      if (this.game.resultsReady && !this.saved) {
-        this.saved = true;
-        void this.saveResults();
-      }
-    }, 60);
+    this.setFixedTimestep(
+      () => {
+        for (const client of this.clients) {
+          const input = this.inputs.get(client.sessionId).next();
+          if (input) this.game.input(client.sessionId, input);
+        }
+        for (const { id, action } of this.actions.splice(0))
+          this.game.action(id, action);
+        this.game.tick();
+        this.game.tick();
+        if (
+          this.game.phase === "lobby" &&
+          this.game.time > 30 &&
+          this.clients.length &&
+          (mode !== "ranked" || this.clients.length >= 2)
+        )
+          this.begin();
+        this.broadcastAge += 1 / 30;
+        if (this.broadcastAge >= 1 / 20) {
+          this.broadcastAge -= 1 / 20;
+          this.broadcast("snapshot", {
+            ...this.game.snapshot(),
+            roomCode: this.code,
+            owner: this.owner,
+          });
+          for (const event of this.game.events.splice(0))
+            this.clients
+              .find((c) => c.sessionId === event.playerId)
+              ?.send("notice", event.text);
+        }
+        if (this.game.resultsReady && !this.saved) {
+          this.saved = true;
+          void this.saveResults();
+        }
+      },
+      30,
+      { subSteps: 2 },
+    );
   }
   allow(id: string) {
     const now = Date.now();
@@ -162,7 +202,12 @@ class BattleRoom extends Room {
     this.rates.set(id, r);
     return r.n < 100;
   }
-  async onAuth(_client: Client, options: { token?: string }) {
+  async onAuth(
+    _client: Client,
+    options: { token?: string; protocol?: number },
+  ) {
+    if (options.protocol !== PROTOCOL)
+      throw new Error("Game updated. Reload before joining.");
     const person = await identity(options.token);
     if (this.game.mode === "ranked" && !person.account)
       throw new Error("Google sign-in is required for Ranked");
@@ -184,8 +229,14 @@ class BattleRoom extends Room {
   }
   onJoin(
     client: Client,
-    options: {appearance?:Record<string,number>},
-    auth: { id: string; name: string; account: boolean; rating: number; equipment:Record<string,string> },
+    options: { appearance?: Record<string, number | string> },
+    auth: {
+      id: string;
+      name: string;
+      account: boolean;
+      rating: number;
+      equipment: Record<string, string>;
+    },
   ) {
     if (!this.owner) this.owner = client.sessionId;
     if (auth.account)
@@ -193,11 +244,22 @@ class BattleRoom extends Room {
         id: auth.id,
         rating: auth.rating,
       });
-    const appearance:Record<string,number>={};
-    for(const [field,category] of [['outfit','Outfit'],['hat','Hat'],['ballSkin','Ball'],['club','Club'],['emote','Emote']]){
-      const value=auth.account?Number(auth.equipment[category]?.split('-')[1]||0):Number(options.appearance?.[field]||0);
-      appearance[field]=Number.isInteger(value)&&value>=0&&value<48?value:0;
+    const appearance: Partial<
+      import("../../packages/game/simulation").PlayerView
+    > = {};
+    for (const [field, count] of [
+      ["outfit", 2],
+      ["hat", 3],
+      ["ballSkin", 8],
+      ["club", 2],
+      ["emote", 4],
+    ] as const) {
+      const value = Number(options.appearance?.[field] || 0);
+      appearance[field] =
+        Number.isInteger(value) && value >= 0 && value < count ? value : 0;
     }
+    const color = String(options.appearance?.color || "");
+    if ((COLORS as readonly string[]).includes(color)) appearance.color = color;
     this.game.addPlayer(client.sessionId, auth.name, false, appearance);
     client.send("welcome", {
       id: client.sessionId,
@@ -227,7 +289,12 @@ class BattleRoom extends Room {
     ];
     let b = 0;
     while (this.game.mode !== "ranked" && this.game.players.size < target)
-      this.game.addPlayer(`bot-${b}`, names[b++] + " · BOT", true);
+      this.game.addPlayer(`bot-${b}`, names[b++] + " · BOT", true, {
+        hat: b % 3,
+        emote: b % 4,
+        outfit: b % 2,
+        club: b % 2,
+      });
     this.game.start();
     void this.lock();
   }
@@ -248,6 +315,10 @@ class BattleRoom extends Room {
     } catch {
       this.depart(client);
     }
+  }
+  onReconnect(client: Client) {
+    const p = this.game.players.get(client.sessionId);
+    if (p) p.connected = true;
   }
   onLeave(client: Client) {
     this.depart(client);
@@ -323,7 +394,13 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.get("/api/health", (_req, res) =>
-  res.json({ ok: true, rooms: rooms.size, accounts: !!db, version: "1.0.0" }),
+  res.json({
+    ok: true,
+    rooms: rooms.size,
+    accounts: !!db,
+    version: "2.0.0",
+    protocol: PROTOCOL,
+  }),
 );
 app.post("/api/guest", (req, res) => {
   const token = randomUUID();

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { Client, type Room } from "@colyseus/sdk";
 test(
-  "eight independent clients share authoritative state; spoofed inputs and guest ranked are rejected",
+  "eight independent clients share v2 authoritative state; old protocol and spoofed swings are rejected",
   { timeout: 90000 },
   async () => {
     const server = spawn(
@@ -44,10 +44,10 @@ test(
       ).token;
       await assert.rejects(
         new Client("http://localhost:2569").joinOrCreate("battle", {
-          mode: "ranked",
+          mode: "party",
           token: rankedToken,
         }),
-        /Google sign-in/,
+        /Game updated/,
       );
       await new Promise((r) => setTimeout(r, 100));
       const clients = Array.from(
@@ -67,6 +67,7 @@ test(
         const room = await clients[i].joinOrCreate("battle", {
           mode: "party",
           token,
+          protocol: 2,
         });
         room.onMessage("snapshot", () => {});
         room.onMessage("welcome", () => {});
@@ -80,7 +81,14 @@ test(
         }),
       );
       assert.equal(new Set(state.players.map((p: any) => p.id)).size, 8);
-      joined[0].send("input", { x: 100000, z: 0, yaw: 0, charging: false });
+      const channel = joined[0].input<{
+        x: number;
+        z: number;
+        yaw: number;
+        charging: boolean;
+      }>();
+      Object.assign(channel.data, { x: 100000, z: 0, yaw: 0, charging: false });
+      channel.send();
       joined[0].send("action", { type: "swing", power: Infinity, angle: 25 });
       const later: any = await new Promise((resolve) => {
         let n = 0;
@@ -94,6 +102,50 @@ test(
       assert.ok(Math.abs(player.pos.x) < 10);
       assert.equal(player.strokes, 0);
       assert.equal(later.players.length, 8);
+      const shooter = joined[7];
+      const shotInput = shooter.input<{
+        x: number;
+        z: number;
+        yaw: number;
+        charging: boolean;
+        seq: number;
+      }>();
+      Object.assign(shotInput.data, {
+        x: 0,
+        z: 0,
+        yaw: 0,
+        charging: true,
+        seq: 1,
+      });
+      shotInput.send();
+      await new Promise((r) => setTimeout(r, 110));
+      shooter.send("action", { type: "charge" });
+      await new Promise((r) => setTimeout(r, 600));
+      shooter.send("action", { type: "swing", angle: 30, power: 9999 });
+      const contact: any = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(
+          () => reject(Error("Authoritative contact never arrived")),
+          5000,
+        );
+        joined[2].onMessage("snapshot", (s) => {
+          const p = s.players.find((p: any) => p.id === shooter.sessionId);
+          if (p?.strokes === 1) {
+            clearTimeout(timeout);
+            resolve(s);
+          }
+        });
+      });
+      assert.equal(contact.protocol, 2);
+      assert.equal(
+        contact.players.find((p: any) => p.id === shooter.sessionId)
+          .lastInputSeq,
+        1,
+      );
+      assert.ok(
+        contact.effects.some(
+          (e: any) => e.kind === "swing" && e.playerId === shooter.sessionId,
+        ),
+      );
     } finally {
       for (const r of joined) await r.leave();
       server.kill();
